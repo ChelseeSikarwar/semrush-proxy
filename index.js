@@ -1,4 +1,4 @@
-// v6 - raw response endpoint for debugging
+// v7 - full SEMrush data fetch
 const express = require('express');
 const fetch = require('node-fetch');
 const app = express();
@@ -11,12 +11,13 @@ app.use((req, res, next) => {
   next();
 });
 
-// Raw test endpoint — returns exact SEMrush response
+// Raw test endpoint
 app.get('/raw', async (req, res) => {
-  const { domain, key } = req.query;
+  const { domain, key, type } = req.query;
   if (!domain || !key) return res.json({ error: 'Need domain and key params' });
   try {
-    const url = `https://api.semrush.com/?type=domain_ranks&key=${key}&export_columns=Dn,Rk,Or,Ot&domain=${domain}&database=us`;
+    const t = type || 'domain_ranks';
+    const url = `https://api.semrush.com/?type=${t}&key=${key}&export_columns=Dn,Rk,Or,Ot,At&domain=${domain}&database=us`;
     const r = await fetch(url);
     const text = await r.text();
     res.json({ raw: text, status: r.status });
@@ -24,6 +25,16 @@ app.get('/raw', async (req, res) => {
     res.json({ error: e.message });
   }
 });
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) return {};
+  const headers = lines[0].split(';').map(h => h.trim().replace(/\r/g, ''));
+  const vals = lines[1].split(';').map(v => v.trim().replace(/\r/g, ''));
+  const obj = {};
+  headers.forEach((h, i) => obj[h] = vals[i] || '');
+  return obj;
+}
 
 app.get('/', async (req, res) => {
   const { type, domain: rawDomain, semrushKey } = req.query;
@@ -40,40 +51,38 @@ app.get('/', async (req, res) => {
     .trim();
 
   try {
+    // Fetch overview (traffic, keywords, rank) + backlinks in parallel
     const ovUrl = `https://api.semrush.com/?type=domain_ranks&key=${semrushKey}&export_columns=Dn,Rk,Or,Ot,Ad,At&domain=${domain}&database=us`;
     const blUrl = `https://api.semrush.com/?type=backlinks_overview&key=${semrushKey}&target=${domain}&target_type=root_domain&export_columns=total,domains_num`;
+    const spamUrl = `https://api.semrush.com/?type=score&key=${semrushKey}&target=${domain}`;
 
-    const [ovRes, blRes] = await Promise.all([fetch(ovUrl), fetch(blUrl)]);
-    const [ovText, blText] = await Promise.all([ovRes.text(), blRes.text()]);
+    const [ovRes, blRes, spamRes] = await Promise.all([
+      fetch(ovUrl),
+      fetch(blUrl),
+      fetch(spamUrl)
+    ]);
+    const [ovText, blText, spamText] = await Promise.all([
+      ovRes.text(), blRes.text(), spamRes.text()
+    ]);
 
-    console.log('Domain:', domain);
-    console.log('OV raw:', JSON.stringify(ovText));
-    console.log('BL raw:', JSON.stringify(blText));
-
-    function parseCSV(text) {
-      const lines = text.trim().split('\n');
-      if (lines.length < 2) return {};
-      const headers = lines[0].split(';').map(h => h.trim().replace(/\r/g, ''));
-      const vals = lines[1].split(';').map(v => v.trim().replace(/\r/g, ''));
-      const obj = {};
-      headers.forEach((h, i) => obj[h] = vals[i] || '');
-      return obj;
-    }
+    console.log('OV:', JSON.stringify(ovText.substring(0, 300)));
+    console.log('BL:', JSON.stringify(blText.substring(0, 300)));
+    console.log('Spam:', JSON.stringify(spamText.substring(0, 300)));
 
     const ov = parseCSV(ovText);
     const bl = parseCSV(blText);
+    const sp = parseCSV(spamText);
 
-    // SEMrush returns full column names: "Rank", "Organic Keywords", "Organic Traffic"
-    const rank = parseInt(ov['Rank']) || parseInt(ov['Rk']) || 0;
-    const organicKw = parseInt(ov['Organic Keywords'] || ov['Or']) || null;
-    const organicTr = parseInt(ov['Organic Traffic'] || ov['Ot']) || null;
+    // SEMrush returns full column names
+    const rank = parseInt(ov['Rank'] || ov['Rk']) || 0;
 
     const data = {
       authorityScore:   rank ? Math.min(100, Math.round(100 - (Math.log10(rank) / 7 * 100))) : null,
-      organicKeywords:  organicKw,
-      organicTraffic:   organicTr,
-      backlinks:        bl['total'] ? parseInt(bl['total']) : null,
-      referringDomains: bl['domains_num'] ? parseInt(bl['domains_num']) : null
+      organicKeywords:  parseInt(ov['Organic Keywords'] || ov['Or']) || null,
+      organicTraffic:   parseInt(ov['Organic Traffic']  || ov['Ot']) || null,
+      backlinks:        parseInt(bl['Total']             || bl['total']       || bl['Backlinks']) || null,
+      referringDomains: parseInt(bl['Referring Domains'] || bl['domains_num'] || bl['Domains'])  || null,
+      spamScore:        parseFloat(sp['Score'] || sp['score']) || null
     };
 
     console.log('Result:', JSON.stringify(data));
@@ -86,4 +95,4 @@ app.get('/', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`SEMrush proxy v6 running on port ${PORT}`));
+app.listen(PORT, () => console.log(`SEMrush proxy v7 on port ${PORT}`));
