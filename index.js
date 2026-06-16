@@ -19,6 +19,9 @@ app.get('/', async (req, res) => {
   }
 
   try {
+    // Strip www. prefix — SEMrush works with root domain only
+    domain = domain.replace(/^www\./, '');
+
     const ovUrl = `https://api.semrush.com/?type=domain_ranks&key=${semrushKey}&export_columns=Dn,Rk,Or,Ot,Ad,At&domain=${domain}&database=us`;
     const blUrl = `https://api.semrush.com/?type=backlinks_overview&key=${semrushKey}&target=${domain}&target_type=root_domain&export_columns=total,domains_num`;
 
