@@ -1,4 +1,4 @@
-// v7 - full SEMrush data fetch
+// v10 - SEMrush + SerpAPI rich results
 const express = require('express');
 const fetch = require('node-fetch');
 const app = express();
@@ -11,22 +11,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Raw test endpoint — test any SEMrush endpoint directly
-app.get('/raw', async (req, res) => {
-  const { domain, key } = req.query;
-  if (!domain || !key) return res.json({ error: 'Need domain and key params' });
-  try {
-    const ovUrl   = `https://api.semrush.com/?type=domain_ranks&key=${key}&export_columns=Dn,Rk,Or,Ot,Ad,At&domain=${domain}&database=us`;
-    const blUrl   = `https://api.semrush.com/?type=backlinks_overview&key=${key}&target=${domain}&target_type=root_domain&export_columns=total,domains_num`;
-    const spamUrl = `https://api.semrush.com/?type=score&key=${key}&target=${domain}`;
-    const [r1,r2,r3] = await Promise.all([fetch(ovUrl),fetch(blUrl),fetch(spamUrl)]);
-    const [t1,t2,t3] = await Promise.all([r1.text(),r2.text(),r3.text()]);
-    res.json({ overview: t1, backlinks: t2, spam: t3 });
-  } catch(e) {
-    res.json({ error: e.message });
-  }
-});
-
 function parseCSV(text) {
   const lines = text.trim().split('\n');
   if (lines.length < 2) return {};
@@ -37,6 +21,54 @@ function parseCSV(text) {
   return obj;
 }
 
+// Raw debug endpoint
+app.get('/raw', async (req, res) => {
+  const { domain, key } = req.query;
+  if (!domain || !key) return res.json({ error: 'Need domain and key params' });
+  try {
+    const ovUrl = `https://api.semrush.com/?type=domain_ranks&key=${key}&export_columns=Dn,Rk,Or,Ot,Ad,At&domain=${domain}&database=us`;
+    const r = await fetch(ovUrl);
+    const text = await r.text();
+    res.json({ overview: text });
+  } catch(e) {
+    res.json({ error: e.message });
+  }
+});
+
+// Rich Results Test via SerpAPI
+app.get('/rich-results', async (req, res) => {
+  const { url: siteUrl, serpKey } = req.query;
+  if (!siteUrl || !serpKey) return res.json({ error: 'Need url and serpKey params' });
+  try {
+    const apiUrl = `https://serpapi.com/search.json?engine=google_rich_results&url=${encodeURIComponent(siteUrl)}&api_key=${serpKey}`;
+    const r = await fetch(apiUrl);
+    const d = await r.json();
+    console.log('SerpAPI rich results:', JSON.stringify(d).substring(0, 500));
+
+    // Count errors from rich results
+    let structuredDataErrors = 0;
+    if (d.structured_data) {
+      d.structured_data.forEach(item => {
+        if (item.errors) structuredDataErrors += item.errors.length;
+        if (item.warnings) structuredDataErrors += item.warnings.length;
+      });
+    }
+    if (d.detected_extensions) {
+      const ext = d.detected_extensions;
+      if (ext.errors) structuredDataErrors += ext.errors;
+    }
+
+    res.json({ 
+      success: true, 
+      structuredDataErrors,
+      raw: d
+    });
+  } catch(e) {
+    res.json({ success: false, error: e.message });
+  }
+});
+
+// Main SEMrush endpoint
 app.get('/', async (req, res) => {
   const { type, domain: rawDomain, semrushKey } = req.query;
 
@@ -52,7 +84,6 @@ app.get('/', async (req, res) => {
     .trim();
 
   try {
-    // Only domain_ranks is available on this API key
     const ovUrl = `https://api.semrush.com/?type=domain_ranks&key=${semrushKey}&export_columns=Dn,Rk,Or,Ot,Ad,At&domain=${domain}&database=us`;
     const ovRes = await fetch(ovUrl);
     const ovText = await ovRes.text();
@@ -60,8 +91,6 @@ app.get('/', async (req, res) => {
     console.log('OV:', JSON.stringify(ovText.substring(0, 300)));
 
     const ov = parseCSV(ovText);
-
-    // SEMrush returns full column names
     const rank = parseInt(ov['Rank'] || ov['Rk']) || 0;
 
     const data = {
@@ -83,4 +112,4 @@ app.get('/', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`SEMrush proxy v7 on port ${PORT}`));
+app.listen(PORT, () => console.log(`SEMrush proxy v10 on port ${PORT}`));
