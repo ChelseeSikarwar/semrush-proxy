@@ -52,27 +52,14 @@ app.get('/', async (req, res) => {
     .trim();
 
   try {
-    // Fetch overview (traffic, keywords, rank) + backlinks in parallel
+    // Only domain_ranks is available on this API key
     const ovUrl = `https://api.semrush.com/?type=domain_ranks&key=${semrushKey}&export_columns=Dn,Rk,Or,Ot,Ad,At&domain=${domain}&database=us`;
-    const blUrl = `https://api.semrush.com/?type=backlinks_overview&key=${semrushKey}&target=${domain}&target_type=root_domain&export_columns=total,domains_num`;
-    const spamUrl = `https://api.semrush.com/?type=score&key=${semrushKey}&target=${domain}`;
-
-    const [ovRes, blRes, spamRes] = await Promise.all([
-      fetch(ovUrl),
-      fetch(blUrl),
-      fetch(spamUrl)
-    ]);
-    const [ovText, blText, spamText] = await Promise.all([
-      ovRes.text(), blRes.text(), spamRes.text()
-    ]);
+    const ovRes = await fetch(ovUrl);
+    const ovText = await ovRes.text();
 
     console.log('OV:', JSON.stringify(ovText.substring(0, 300)));
-    console.log('BL:', JSON.stringify(blText.substring(0, 300)));
-    console.log('Spam:', JSON.stringify(spamText.substring(0, 300)));
 
     const ov = parseCSV(ovText);
-    const bl = parseCSV(blText);
-    const sp = parseCSV(spamText);
 
     // SEMrush returns full column names
     const rank = parseInt(ov['Rank'] || ov['Rk']) || 0;
@@ -81,9 +68,9 @@ app.get('/', async (req, res) => {
       authorityScore:   rank ? Math.min(100, Math.round(100 - (Math.log10(rank) / 7 * 100))) : null,
       organicKeywords:  parseInt(ov['Organic Keywords'] || ov['Or']) || null,
       organicTraffic:   parseInt(ov['Organic Traffic']  || ov['Ot']) || null,
-      backlinks:        parseInt(bl['Total']             || bl['total']       || bl['Backlinks']) || null,
-      referringDomains: parseInt(bl['Referring Domains'] || bl['domains_num'] || bl['Domains'])  || null,
-      spamScore:        parseFloat(sp['Score'] || sp['score']) || null
+      backlinks:        null,
+      referringDomains: null,
+      spamScore:        null
     };
 
     console.log('Result:', JSON.stringify(data));
