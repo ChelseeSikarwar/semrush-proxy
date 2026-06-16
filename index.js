@@ -12,15 +12,15 @@ app.use((req, res, next) => {
 });
 
 app.get('/', async (req, res) => {
-  const { type, domain, semrushKey } = req.query;
+  const { type, domain: rawDomain, semrushKey } = req.query;
 
-  if (type !== 'semrush' || !domain || !semrushKey) {
+  if (type !== 'semrush' || !rawDomain || !semrushKey) {
     return res.json({ success: false, error: 'Missing parameters' });
   }
 
   try {
     // Strip www. prefix — SEMrush works with root domain only
-    domain = domain.replace(/^www\./, '');
+    const domain = rawDomain.replace(/^www\./, '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 
     const ovUrl = `https://api.semrush.com/?type=domain_ranks&key=${semrushKey}&export_columns=Dn,Rk,Or,Ot,Ad,At&domain=${domain}&database=us`;
     const blUrl = `https://api.semrush.com/?type=backlinks_overview&key=${semrushKey}&target=${domain}&target_type=root_domain&export_columns=total,domains_num`;
