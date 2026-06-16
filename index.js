@@ -11,16 +11,17 @@ app.use((req, res, next) => {
   next();
 });
 
-// Raw test endpoint
+// Raw test endpoint — test any SEMrush endpoint directly
 app.get('/raw', async (req, res) => {
-  const { domain, key, type } = req.query;
+  const { domain, key } = req.query;
   if (!domain || !key) return res.json({ error: 'Need domain and key params' });
   try {
-    const t = type || 'domain_ranks';
-    const url = `https://api.semrush.com/?type=${t}&key=${key}&export_columns=Dn,Rk,Or,Ot,At&domain=${domain}&database=us`;
-    const r = await fetch(url);
-    const text = await r.text();
-    res.json({ raw: text, status: r.status });
+    const ovUrl   = `https://api.semrush.com/?type=domain_ranks&key=${key}&export_columns=Dn,Rk,Or,Ot,Ad,At&domain=${domain}&database=us`;
+    const blUrl   = `https://api.semrush.com/?type=backlinks_overview&key=${key}&target=${domain}&target_type=root_domain&export_columns=total,domains_num`;
+    const spamUrl = `https://api.semrush.com/?type=score&key=${key}&target=${domain}`;
+    const [r1,r2,r3] = await Promise.all([fetch(ovUrl),fetch(blUrl),fetch(spamUrl)]);
+    const [t1,t2,t3] = await Promise.all([r1.text(),r2.text(),r3.text()]);
+    res.json({ overview: t1, backlinks: t2, spam: t3 });
   } catch(e) {
     res.json({ error: e.message });
   }
