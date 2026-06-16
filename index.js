@@ -84,22 +84,37 @@ app.get('/', async (req, res) => {
     .trim();
 
   try {
+    // domain_ranks — traffic, keywords, rank
     const ovUrl = `https://api.semrush.com/?type=domain_ranks&key=${semrushKey}&export_columns=Dn,Rk,Or,Ot,Ad,At&domain=${domain}&database=us`;
-    const ovRes = await fetch(ovUrl);
-    const ovText = await ovRes.text();
+    // backlinks_overview — total backlinks
+    const blUrl = `https://api.semrush.com/?type=backlinks_overview&key=${semrushKey}&target=${domain}&target_type=root_domain&export_columns=ascore,total,domains_num,urls_num,ips_num,ipclassc_num,follows_num,nofollows_num`;
+    // backlinks_refdomains — referring domains
+    const rdUrl = `https://api.semrush.com/?type=backlinks_refdomains&key=${semrushKey}&target=${domain}&target_type=root_domain&export_columns=domain_ascore,domain,backlinks_num,ip&display_limit=1`;
+
+    const [ovRes, blRes, rdRes] = await Promise.all([fetch(ovUrl), fetch(blUrl), fetch(rdUrl)]);
+    const [ovText, blText, rdText] = await Promise.all([ovRes.text(), blRes.text(), rdRes.text()]);
 
     console.log('OV:', JSON.stringify(ovText.substring(0, 300)));
+    console.log('BL:', JSON.stringify(blText.substring(0, 300)));
+    console.log('RD:', JSON.stringify(rdText.substring(0, 300)));
 
     const ov = parseCSV(ovText);
+    const bl = parseCSV(blText);
+
     const rank = parseInt(ov['Rank'] || ov['Rk']) || 0;
+
+    // Referring domains — count lines in rdText (each line after header = 1 referring domain)
+    const rdLines = rdText.trim().split('\n').filter(l => l.trim() && !l.startsWith('domain_ascore'));
+    const refDomainsCount = rdLines.length > 0 && !rdText.includes('NOTHING FOUND') ? rdLines.length : 
+                            parseInt(bl['Domains'] || bl['domains_num']) || null;
 
     const data = {
       authorityScore:   rank ? Math.min(100, Math.round(100 - (Math.log10(rank) / 7 * 100))) : null,
       organicKeywords:  parseInt(ov['Organic Keywords'] || ov['Or']) || null,
       organicTraffic:   parseInt(ov['Organic Traffic']  || ov['Ot']) || null,
-      backlinks:        null,
-      referringDomains: null,
-      spamScore:        null
+      backlinks:        parseInt(bl['Total'] || bl['total'] || bl['Backlinks']) || null,
+      referringDomains: parseInt(bl['Domains'] || bl['domains_num']) || refDomainsCount,
+      spamScore:        null  // Not available via SEMrush API — use DataForSEO if needed
     };
 
     console.log('Result:', JSON.stringify(data));
