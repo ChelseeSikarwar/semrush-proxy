@@ -21,15 +21,15 @@ function parseCSV(text) {
   return obj;
 }
 
-// Raw debug endpoint
+// Raw debug endpoint — tests all endpoints
 app.get('/raw', async (req, res) => {
   const { domain, key } = req.query;
   if (!domain || !key) return res.json({ error: 'Need domain and key params' });
   try {
-    const ovUrl = `https://api.semrush.com/?type=domain_ranks&key=${key}&export_columns=Dn,Rk,Or,Ot,Ad,At&domain=${domain}&database=us`;
-    const r = await fetch(ovUrl);
+    const blOvUrl = `https://api.semrush.com/?type=backlinks_overview&key=${key}&target=${domain}&target_type=root_domain&export_columns=ascore,total,domains_num,urls_num,ips_num,ipclassc_num,follows_num,nofollows_num`;
+    const r = await fetch(blOvUrl);
     const text = await r.text();
-    res.json({ overview: text });
+    res.json({ backlinks_overview: text });
   } catch(e) {
     res.json({ error: e.message });
   }
