@@ -63,15 +63,17 @@ app.get('/', async (req, res) => {
     const ov = parseCSV(ovText);
     const bl = parseCSV(blText);
 
-    const rank = parseInt(ov['Rk']) || 0;
+    // SEMrush returns full column names: "Rank", "Organic Keywords", "Organic Traffic"
+    const rank = parseInt(ov['Rank']) || parseInt(ov['Rk']) || 0;
+    const organicKw = parseInt(ov['Organic Keywords'] || ov['Or']) || null;
+    const organicTr = parseInt(ov['Organic Traffic'] || ov['Ot']) || null;
 
     const data = {
       authorityScore:   rank ? Math.min(100, Math.round(100 - (Math.log10(rank) / 7 * 100))) : null,
-      organicKeywords:  ov['Or'] ? parseInt(ov['Or']) : null,
-      organicTraffic:   ov['Ot'] ? parseInt(ov['Ot']) : null,
+      organicKeywords:  organicKw,
+      organicTraffic:   organicTr,
       backlinks:        bl['total'] ? parseInt(bl['total']) : null,
-      referringDomains: bl['domains_num'] ? parseInt(bl['domains_num']) : null,
-      _raw: { ovText: ovText.substring(0, 200), blText: blText.substring(0, 200) }
+      referringDomains: bl['domains_num'] ? parseInt(bl['domains_num']) : null
     };
 
     console.log('Result:', JSON.stringify(data));
