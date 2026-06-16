@@ -1,4 +1,4 @@
-// v5 - force redeploy
+// v6 - raw response endpoint for debugging
 const express = require('express');
 const fetch = require('node-fetch');
 const app = express();
@@ -9,6 +9,20 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
+});
+
+// Raw test endpoint — returns exact SEMrush response
+app.get('/raw', async (req, res) => {
+  const { domain, key } = req.query;
+  if (!domain || !key) return res.json({ error: 'Need domain and key params' });
+  try {
+    const url = `https://api.semrush.com/?type=domain_ranks&key=${key}&export_columns=Dn,Rk,Or,Ot&domain=${domain}&database=us`;
+    const r = await fetch(url);
+    const text = await r.text();
+    res.json({ raw: text, status: r.status });
+  } catch(e) {
+    res.json({ error: e.message });
+  }
 });
 
 app.get('/', async (req, res) => {
@@ -33,8 +47,8 @@ app.get('/', async (req, res) => {
     const [ovText, blText] = await Promise.all([ovRes.text(), blRes.text()]);
 
     console.log('Domain:', domain);
-    console.log('OV raw:', ovText.substring(0, 300));
-    console.log('BL raw:', blText.substring(0, 300));
+    console.log('OV raw:', JSON.stringify(ovText));
+    console.log('BL raw:', JSON.stringify(blText));
 
     function parseCSV(text) {
       const lines = text.trim().split('\n');
@@ -49,27 +63,18 @@ app.get('/', async (req, res) => {
     const ov = parseCSV(ovText);
     const bl = parseCSV(blText);
 
-    console.log('OV parsed:', JSON.stringify(ov));
-    console.log('BL parsed:', JSON.stringify(bl));
-
-    // Check for SEMrush API errors
-    if (ovText.includes('NOTHING FOUND') || ovText.startsWith('ERROR')) {
-      return res.json({ success: false, error: 'SEMrush: ' + ovText.substring(0, 150) });
-    }
-
     const rank = parseInt(ov['Rk']) || 0;
 
     const data = {
       authorityScore:   rank ? Math.min(100, Math.round(100 - (Math.log10(rank) / 7 * 100))) : null,
-      organicKeywords:  parseInt(ov['Or']) || null,
-      organicTraffic:   parseInt(ov['Ot']) || null,
-      backlinks:        parseInt(bl['total']) || null,
-      referringDomains: parseInt(bl['domains_num']) || null
+      organicKeywords:  ov['Or'] ? parseInt(ov['Or']) : null,
+      organicTraffic:   ov['Ot'] ? parseInt(ov['Ot']) : null,
+      backlinks:        bl['total'] ? parseInt(bl['total']) : null,
+      referringDomains: bl['domains_num'] ? parseInt(bl['domains_num']) : null,
+      _raw: { ovText: ovText.substring(0, 200), blText: blText.substring(0, 200) }
     };
 
-    console.log('Result data:', JSON.stringify(data));
-
-    // Return success as long as we got ANY parseable response — let dashboard handle nulls
+    console.log('Result:', JSON.stringify(data));
     res.json({ success: true, data, domain });
 
   } catch (err) {
@@ -79,4 +84,4 @@ app.get('/', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`SEMrush proxy running on port ${PORT}`));
+app.listen(PORT, () => console.log(`SEMrush proxy v6 running on port ${PORT}`));
